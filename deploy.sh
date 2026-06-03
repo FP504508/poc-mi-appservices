@@ -1,4 +1,20 @@
 #!/usr/bin/env bash
+# =============================================================================
+# deploy.sh — Infraestructura Azure para POC Managed Identity + Entra ID
+#
+# PREREQUISITO: Las imágenes Docker deben estar publicadas en el ACR ANTES
+#               de ejecutar este script. El workflow de GitHub Actions
+#               .github/workflows/build-and-push.yml se encarga de construirlas
+#               y subirlas al registry (jobs build-backend y build-frontend).
+#
+# Orden de ejecución:
+#   1. Push a main (o "Run workflow" en GitHub Actions)
+#      → build-and-push.yml publica poc-mi-backend:latest y poc-mi-frontend:latest
+#   2. bash deploy.sh
+#      → crea toda la infraestructura Azure y despliega los contenedores
+#
+# Uso: bash deploy.sh
+# =============================================================================
 set -euo pipefail
 
 RG="rg-poc-mi-appservices"
@@ -14,7 +30,7 @@ FRONTEND_IMAGE="$ACR_NAME.azurecr.io/poc-mi-frontend:latest"
 ROLE_ID="11111111-1111-1111-1111-111111111111"
 
 echo ""
-echo "[1/13] Crear Resource Group"
+echo "[1/11] Crear Resource Group"
 echo "       Qué hace: Crea el Resource Group 'rg-poc-mi-appservices' en México Central"
 echo "       Por qué:  Es el contenedor lógico de todos los recursos Azure de esta POC."
 echo "                 Borrar este grupo al final elimina todo de una vez."
@@ -22,7 +38,7 @@ echo ""
 az group create --name "$RG" --location "$LOCATION" -o none
 
 echo ""
-echo "[2/13] Crear Azure Container Registry (Basic, admin-enabled)"
+echo "[2/11] Crear Azure Container Registry (Basic, admin-enabled)"
 echo "       Qué hace: Crea el Azure Container Registry (ACR) para guardar las imágenes Docker"
 echo "       Por qué:  Azure App Service no puede usar imágenes locales, necesita"
 echo "                 descargarlas desde un registry. El ACR es el registry privado de Azure."
@@ -30,30 +46,7 @@ echo ""
 az acr create --resource-group "$RG" --name "$ACR_NAME" --sku Basic --admin-enabled true -o none
 
 echo ""
-echo "[3/13] Construir y subir imagen backend al ACR"
-echo "       Qué hace: Hace docker build de la imagen del backend y la sube al ACR"
-echo "       Por qué:  La suscripción no permite ACR Tasks, por lo que el build se"
-echo "                 ejecuta localmente con Docker y se empuja al registry con push."
-echo ""
-ACR_LOGIN_SERVER=$(az acr show --name "$ACR_NAME" --resource-group "$RG" --query loginServer -o tsv)
-ACR_USER=$(az acr credential show --name "$ACR_NAME" --query username -o tsv)
-ACR_PASS=$(az acr credential show --name "$ACR_NAME" --query "passwords[0].value" -o tsv)
-az acr login --name "$ACR_NAME"
-docker build -t "$BACKEND_IMAGE" ./backend
-docker push "$BACKEND_IMAGE"
-
-echo ""
-echo "[4/13] Construir y subir imagen frontend al ACR"
-echo "       Qué hace: Hace docker build de la imagen del frontend y la sube al ACR"
-echo "       Por qué:  Igual que el paso anterior pero para el frontend React + Express."
-echo "                 El Dockerfile hace dos etapas: build de React con Vite y"
-echo "                 runtime con Node + Express."
-echo ""
-docker build -t "$FRONTEND_IMAGE" ./frontend
-docker push "$FRONTEND_IMAGE"
-
-echo ""
-echo "[5/13] Crear App Service Plan compartido (Linux, SKU B1)"
+echo "[3/11] Crear App Service Plan compartido (Linux, SKU B1)"
 echo "       Qué hace: Crea UN SOLO App Service Plan B1 Linux compartido"
 echo "       Por qué:  El Plan es la infraestructura subyacente (VM). Compartirlo"
 echo "                 entre frontend y backend reduce el costo de la POC a ~\$13/mes"
@@ -62,7 +55,7 @@ echo ""
 az appservice plan create --name "$PLAN" --resource-group "$RG" --is-linux --sku B1 -o none
 
 echo ""
-echo "[6/13] Registrar backend en Entra ID"
+echo "[4/11] Registrar backend en Entra ID"
 echo "       Qué hace: Registra el backend en Microsoft Entra ID como App Registration"
 echo "       Por qué:  Para que Entra ID sepa que el backend es un recurso protegido"
 echo "                 con un audience definido (api://<client-id>). Sin esto el"
@@ -74,12 +67,15 @@ az ad app update --id "$BACKEND_CLIENT_ID" --identifier-uris "$APP_ID_URI" -o no
 TENANT_ID=$(az account show --query tenantId -o tsv)
 
 echo ""
-echo "[7/13] Crear App Service del BACKEND"
+echo "[5/11] Crear App Service del BACKEND"
 echo "       Qué hace: Crea el App Service del backend y configura sus variables de entorno"
 echo "       Por qué:  Despliega el contenedor Spring Boot. Las variables AZURE_CLIENT_ID"
 echo "                 y AZURE_APP_ID_URI le dicen al backend cómo validar los tokens"
 echo "                 de Entra ID (Capa 1 de seguridad)."
 echo ""
+ACR_LOGIN_SERVER=$(az acr show --name "$ACR_NAME" --resource-group "$RG" --query loginServer -o tsv)
+ACR_USER=$(az acr credential show --name "$ACR_NAME" --query username -o tsv)
+ACR_PASS=$(az acr credential show --name "$ACR_NAME" --query "passwords[0].value" -o tsv)
 az webapp create --name "$BACKEND_APP" --resource-group "$RG" --plan "$PLAN" --deployment-container-image-name "$BACKEND_IMAGE" -o none
 az webapp config container set --name "$BACKEND_APP" --resource-group "$RG" \
   --docker-custom-image-name "$BACKEND_IMAGE" \
@@ -90,7 +86,7 @@ az webapp config appsettings set --name "$BACKEND_APP" --resource-group "$RG" \
   --settings AZURE_CLIENT_ID="$BACKEND_CLIENT_ID" AZURE_APP_ID_URI="$APP_ID_URI" -o none
 
 echo ""
-echo "[8/13] Crear App Service del FRONTEND"
+echo "[6/11] Crear App Service del FRONTEND"
 echo "       Qué hace: Crea el App Service del frontend y configura sus variables de entorno"
 echo "       Por qué:  Despliega el contenedor React + Express. Las variables BACKEND_URL"
 echo "                 y BACKEND_SCOPE le dicen al frontend a dónde llamar y qué"
@@ -108,7 +104,7 @@ az webapp config appsettings set --name "$FRONTEND_APP" --resource-group "$RG" \
   --settings BACKEND_URL="$BACKEND_URL" BACKEND_SCOPE="$BACKEND_SCOPE" -o none
 
 echo ""
-echo "[9/13] Habilitar Managed Identity en el frontend"
+echo "[7/11] Habilitar Managed Identity en el frontend"
 echo "       Qué hace: Habilita la Managed Identity en el App Service del frontend"
 echo "                 y captura su clientId para la Capa 3 de seguridad"
 echo "       Por qué:  La Managed Identity es la identidad del frontend en Entra ID."
@@ -123,9 +119,9 @@ az webapp config appsettings set --name "$BACKEND_APP" --resource-group "$RG" \
   --settings FRONTEND_MI_CLIENT_ID="$FRONTEND_MI_CLIENT_ID" -o none
 
 echo ""
-echo "[10/13] Crear Service Principal del backend"
+echo "[8/11] Crear Service Principal del backend"
 echo "        Qué hace: Crea el Service Principal del backend en Entra ID"
-echo "        Por qué:  El App Registration del paso [6/13] es solo el registro."
+echo "        Por qué:  El App Registration del paso [4/11] es solo el registro."
 echo "                  El Service Principal es la identidad activa que puede"
 echo "                  recibir asignaciones de roles y permisos."
 echo ""
@@ -135,7 +131,7 @@ fi
 BACKEND_SP_ID=$(az ad sp show --id "$BACKEND_CLIENT_ID" --query id -o tsv)
 
 echo ""
-echo "[11/13] Agregar App Role 'Frontend.Call' al backend"
+echo "[9/11] Agregar App Role 'Frontend.Call' al backend"
 echo "        Qué hace: Define el App Role 'Frontend.Call' en el backend"
 echo "        Por qué:  El App Role es el permiso explícito que debe tener la"
 echo "                  Managed Identity del frontend para llamar al backend."
@@ -158,7 +154,7 @@ APP_ROLES='[
 az ad app update --id "$APP_OBJECT_ID" --app-roles "$APP_ROLES" -o none
 
 echo ""
-echo "[12/13] Asignar App Role a la Managed Identity del frontend"
+echo "[10/11] Asignar App Role a la Managed Identity del frontend"
 echo "        Qué hace: Asigna el App Role 'Frontend.Call' a la Managed Identity del frontend"
 echo "        Por qué:  Conecta la identidad del frontend con el permiso definido"
 echo "                  en el paso anterior. A partir de aquí Entra ID incluirá"
@@ -175,7 +171,7 @@ az rest \
   --body "{\"principalId\":\"$FRONTEND_PRINCIPAL_ID\",\"resourceId\":\"$BACKEND_SP_ID\",\"appRoleId\":\"$ROLE_ID\"}" -o none
 
 echo ""
-echo "[13/13] Imprimir resumen del despliegue"
+echo "[11/11] Imprimir resumen del despliegue"
 echo "        Qué hace: Imprime el resumen con URLs y comandos de verificación"
 echo "        Por qué:  Confirma que todo se creó correctamente y da los pasos"
 echo "                  exactos para probar la comunicación segura."
