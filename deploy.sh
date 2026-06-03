@@ -30,31 +30,27 @@ echo ""
 az acr create --resource-group "$RG" --name "$ACR_NAME" --sku Basic --admin-enabled true -o none
 
 echo ""
-echo "[3/13] Construir imagen backend con ACR Tasks"
-echo "       Qué hace: Construye la imagen Docker del backend en Azure usando ACR Tasks"
-echo "       Por qué:  ACR Tasks compila la imagen directamente en Azure sin necesitar"
-echo "                 Docker instalado en la máquina local. Sube el código fuente"
-echo "                 y Azure hace el build con el Dockerfile del backend."
+echo "[3/13] Construir y subir imagen backend al ACR"
+echo "       Qué hace: Hace docker build de la imagen del backend y la sube al ACR"
+echo "       Por qué:  La suscripción no permite ACR Tasks, por lo que el build se"
+echo "                 ejecuta localmente con Docker y se empuja al registry con push."
 echo ""
 ACR_LOGIN_SERVER=$(az acr show --name "$ACR_NAME" --resource-group "$RG" --query loginServer -o tsv)
 ACR_USER=$(az acr credential show --name "$ACR_NAME" --query username -o tsv)
 ACR_PASS=$(az acr credential show --name "$ACR_NAME" --query "passwords[0].value" -o tsv)
-az acr build \
-  --registry "$ACR_NAME" \
-  --image poc-mi-backend:latest \
-  ./backend
+az acr login --name "$ACR_NAME"
+docker build -t "$BACKEND_IMAGE" ./backend
+docker push "$BACKEND_IMAGE"
 
 echo ""
-echo "[4/13] Construir imagen frontend con ACR Tasks"
-echo "       Qué hace: Construye la imagen Docker del frontend en Azure usando ACR Tasks"
+echo "[4/13] Construir y subir imagen frontend al ACR"
+echo "       Qué hace: Hace docker build de la imagen del frontend y la sube al ACR"
 echo "       Por qué:  Igual que el paso anterior pero para el frontend React + Express."
 echo "                 El Dockerfile hace dos etapas: build de React con Vite y"
 echo "                 runtime con Node + Express."
 echo ""
-az acr build \
-  --registry "$ACR_NAME" \
-  --image poc-mi-frontend:latest \
-  ./frontend
+docker build -t "$FRONTEND_IMAGE" ./frontend
+docker push "$FRONTEND_IMAGE"
 
 echo ""
 echo "[5/13] Crear App Service Plan compartido (Linux, SKU B1)"
