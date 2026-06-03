@@ -4,13 +4,12 @@ set -euo pipefail
 RG="rg-poc-mi-appservices"
 LOCATION="mexicocentral"
 PLAN="plan-poc-mi-appservices"  # UN SOLO plan compartido para frontend y backend
-SUFFIX=$RANDOM
-FRONTEND_APP="frontend-poc-$SUFFIX"
-BACKEND_APP="backend-poc-$SUFFIX"
-ACR_NAME="acrpocmi$SUFFIX"
+FRONTEND_APP="app-frontend-poc-mi"
+BACKEND_APP="app-backend-poc-mi"
+ACR_NAME="acrpocmiappservices"
 
-BACKEND_IMAGE="$ACR_NAME.azurecr.io/backend:latest"
-FRONTEND_IMAGE="$ACR_NAME.azurecr.io/frontend:latest"
+BACKEND_IMAGE="$ACR_NAME.azurecr.io/poc-mi-backend:latest"
+FRONTEND_IMAGE="$ACR_NAME.azurecr.io/poc-mi-frontend:latest"
 
 ROLE_ID="11111111-1111-1111-1111-111111111111"
 
@@ -42,7 +41,7 @@ ACR_USER=$(az acr credential show --name "$ACR_NAME" --query username -o tsv)
 ACR_PASS=$(az acr credential show --name "$ACR_NAME" --query "passwords[0].value" -o tsv)
 az acr build \
   --registry "$ACR_NAME" \
-  --image backend:latest \
+  --image poc-mi-backend:latest \
   ./backend
 
 echo ""
@@ -54,7 +53,7 @@ echo "                 runtime con Node + Express."
 echo ""
 az acr build \
   --registry "$ACR_NAME" \
-  --image frontend:latest \
+  --image poc-mi-frontend:latest \
   ./frontend
 
 echo ""
@@ -73,7 +72,7 @@ echo "       Por qué:  Para que Entra ID sepa que el backend es un recurso prot
 echo "                 con un audience definido (api://<client-id>). Sin esto el"
 echo "                 backend no puede validar tokens JWT."
 echo ""
-BACKEND_CLIENT_ID=$(az ad app create --display-name "backend-poc-api-$SUFFIX" --query appId -o tsv)
+BACKEND_CLIENT_ID=$(az ad app create --display-name "backend-poc-api" --query appId -o tsv)
 APP_ID_URI="api://$BACKEND_CLIENT_ID"
 az ad app update --id "$BACKEND_CLIENT_ID" --identifier-uris "$APP_ID_URI" -o none
 TENANT_ID=$(az account show --query tenantId -o tsv)
