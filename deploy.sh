@@ -2,7 +2,7 @@
 set -euo pipefail
 
 RG="rg-poc-mi-appservices"
-LOCATION="eastus"
+LOCATION="mexicocentral"
 PLAN="plan-poc-mi-appservices"  # UN SOLO plan compartido para frontend y backend
 SUFFIX=$RANDOM
 FRONTEND_APP="frontend-poc-$SUFFIX"
@@ -14,35 +14,77 @@ FRONTEND_IMAGE="$ACR_NAME.azurecr.io/frontend:latest"
 
 ROLE_ID="11111111-1111-1111-1111-111111111111"
 
-printf "\n[1/13] Crear Resource Group\n"
+echo ""
+echo "[1/13] Crear Resource Group"
+echo "       Qué hace: Crea el Resource Group 'rg-poc-mi-appservices' en México Central"
+echo "       Por qué:  Es el contenedor lógico de todos los recursos Azure de esta POC."
+echo "                 Borrar este grupo al final elimina todo de una vez."
+echo ""
 az group create --name "$RG" --location "$LOCATION" -o none
 
-printf "\n[2/13] Crear Azure Container Registry (Basic, admin-enabled)\n"
+echo ""
+echo "[2/13] Crear Azure Container Registry (Basic, admin-enabled)"
+echo "       Qué hace: Crea el Azure Container Registry (ACR) para guardar las imágenes Docker"
+echo "       Por qué:  Azure App Service no puede usar imágenes locales, necesita"
+echo "                 descargarlas desde un registry. El ACR es el registry privado de Azure."
+echo ""
 az acr create --resource-group "$RG" --name "$ACR_NAME" --sku Basic --admin-enabled true -o none
 
-printf "\n[3/13] az acr login + docker build backend + docker push\n"
-az acr login --name "$ACR_NAME" -o none
+echo ""
+echo "[3/13] Construir imagen backend con ACR Tasks"
+echo "       Qué hace: Construye la imagen Docker del backend en Azure usando ACR Tasks"
+echo "       Por qué:  ACR Tasks compila la imagen directamente en Azure sin necesitar"
+echo "                 Docker instalado en la máquina local. Sube el código fuente"
+echo "                 y Azure hace el build con el Dockerfile del backend."
+echo ""
 ACR_LOGIN_SERVER=$(az acr show --name "$ACR_NAME" --resource-group "$RG" --query loginServer -o tsv)
 ACR_USER=$(az acr credential show --name "$ACR_NAME" --query username -o tsv)
 ACR_PASS=$(az acr credential show --name "$ACR_NAME" --query "passwords[0].value" -o tsv)
+az acr build \
+  --registry "$ACR_NAME" \
+  --image backend:latest \
+  ./backend
 
-docker build -t "$BACKEND_IMAGE" ./backend
-docker push "$BACKEND_IMAGE"
+echo ""
+echo "[4/13] Construir imagen frontend con ACR Tasks"
+echo "       Qué hace: Construye la imagen Docker del frontend en Azure usando ACR Tasks"
+echo "       Por qué:  Igual que el paso anterior pero para el frontend React + Express."
+echo "                 El Dockerfile hace dos etapas: build de React con Vite y"
+echo "                 runtime con Node + Express."
+echo ""
+az acr build \
+  --registry "$ACR_NAME" \
+  --image frontend:latest \
+  ./frontend
 
-printf "\n[4/13] docker build frontend + docker push\n"
-docker build -t "$FRONTEND_IMAGE" ./frontend
-docker push "$FRONTEND_IMAGE"
-
-printf "\n[5/13] Crear UN SOLO App Service Plan (Linux, SKU B1)\n"
+echo ""
+echo "[5/13] Crear App Service Plan compartido (Linux, SKU B1)"
+echo "       Qué hace: Crea UN SOLO App Service Plan B1 Linux compartido"
+echo "       Por qué:  El Plan es la infraestructura subyacente (VM). Compartirlo"
+echo "                 entre frontend y backend reduce el costo de la POC a ~\$13/mes"
+echo "                 en lugar de ~\$26/mes con dos planes separados."
+echo ""
 az appservice plan create --name "$PLAN" --resource-group "$RG" --is-linux --sku B1 -o none
 
-printf "\n[6/13] Registrar backend en Entra ID\n"
+echo ""
+echo "[6/13] Registrar backend en Entra ID"
+echo "       Qué hace: Registra el backend en Microsoft Entra ID como App Registration"
+echo "       Por qué:  Para que Entra ID sepa que el backend es un recurso protegido"
+echo "                 con un audience definido (api://<client-id>). Sin esto el"
+echo "                 backend no puede validar tokens JWT."
+echo ""
 BACKEND_CLIENT_ID=$(az ad app create --display-name "backend-poc-api-$SUFFIX" --query appId -o tsv)
 APP_ID_URI="api://$BACKEND_CLIENT_ID"
 az ad app update --id "$BACKEND_CLIENT_ID" --identifier-uris "$APP_ID_URI" -o none
 TENANT_ID=$(az account show --query tenantId -o tsv)
 
-printf "\n[7/13] Crear App Service del BACKEND\n"
+echo ""
+echo "[7/13] Crear App Service del BACKEND"
+echo "       Qué hace: Crea el App Service del backend y configura sus variables de entorno"
+echo "       Por qué:  Despliega el contenedor Spring Boot. Las variables AZURE_CLIENT_ID"
+echo "                 y AZURE_APP_ID_URI le dicen al backend cómo validar los tokens"
+echo "                 de Entra ID (Capa 1 de seguridad)."
+echo ""
 az webapp create --name "$BACKEND_APP" --resource-group "$RG" --plan "$PLAN" --deployment-container-image-name "$BACKEND_IMAGE" -o none
 az webapp config container set --name "$BACKEND_APP" --resource-group "$RG" \
   --docker-custom-image-name "$BACKEND_IMAGE" \
@@ -52,7 +94,13 @@ az webapp config container set --name "$BACKEND_APP" --resource-group "$RG" \
 az webapp config appsettings set --name "$BACKEND_APP" --resource-group "$RG" \
   --settings AZURE_CLIENT_ID="$BACKEND_CLIENT_ID" AZURE_APP_ID_URI="$APP_ID_URI" -o none
 
-printf "\n[8/13] Crear App Service del FRONTEND\n"
+echo ""
+echo "[8/13] Crear App Service del FRONTEND"
+echo "       Qué hace: Crea el App Service del frontend y configura sus variables de entorno"
+echo "       Por qué:  Despliega el contenedor React + Express. Las variables BACKEND_URL"
+echo "                 y BACKEND_SCOPE le dicen al frontend a dónde llamar y qué"
+echo "                 audience usar al pedir el token JWT a Entra ID."
+echo ""
 az webapp create --name "$FRONTEND_APP" --resource-group "$RG" --plan "$PLAN" --deployment-container-image-name "$FRONTEND_IMAGE" -o none
 az webapp config container set --name "$FRONTEND_APP" --resource-group "$RG" \
   --docker-custom-image-name "$FRONTEND_IMAGE" \
@@ -64,20 +112,42 @@ BACKEND_SCOPE="$APP_ID_URI/.default"
 az webapp config appsettings set --name "$FRONTEND_APP" --resource-group "$RG" \
   --settings BACKEND_URL="$BACKEND_URL" BACKEND_SCOPE="$BACKEND_SCOPE" -o none
 
-printf "\n[9/13] Habilitar Managed Identity en el frontend\n"
+echo ""
+echo "[9/13] Habilitar Managed Identity en el frontend"
+echo "       Qué hace: Habilita la Managed Identity en el App Service del frontend"
+echo "                 y captura su clientId para la Capa 3 de seguridad"
+echo "       Por qué:  La Managed Identity es la identidad del frontend en Entra ID."
+echo "                 No requiere secretos ni contraseñas — Azure la gestiona sola."
+echo "                 El clientId se inyecta en el backend para verificar que solo"
+echo "                 este frontend específico puede llamarlo (Capa 3)."
+echo ""
 az webapp identity assign --name "$FRONTEND_APP" --resource-group "$RG" -o none
 FRONTEND_PRINCIPAL_ID=$(az webapp identity show --name "$FRONTEND_APP" --resource-group "$RG" --query principalId -o tsv)
 FRONTEND_MI_CLIENT_ID=$(az webapp identity show --name "$FRONTEND_APP" --resource-group "$RG" --query clientId -o tsv)
 az webapp config appsettings set --name "$BACKEND_APP" --resource-group "$RG" \
   --settings FRONTEND_MI_CLIENT_ID="$FRONTEND_MI_CLIENT_ID" -o none
 
-printf "\n[10/13] Crear Service Principal del backend si no existe\n"
+echo ""
+echo "[10/13] Crear Service Principal del backend"
+echo "        Qué hace: Crea el Service Principal del backend en Entra ID"
+echo "        Por qué:  El App Registration del paso [6/13] es solo el registro."
+echo "                  El Service Principal es la identidad activa que puede"
+echo "                  recibir asignaciones de roles y permisos."
+echo ""
 if ! az ad sp show --id "$BACKEND_CLIENT_ID" >/dev/null 2>&1; then
   az ad sp create --id "$BACKEND_CLIENT_ID" -o none
 fi
 BACKEND_SP_ID=$(az ad sp show --id "$BACKEND_CLIENT_ID" --query id -o tsv)
 
-printf "\n[11/13] Agregar App Role al App Registration del backend\n"
+echo ""
+echo "[11/13] Agregar App Role 'Frontend.Call' al backend"
+echo "        Qué hace: Define el App Role 'Frontend.Call' en el backend"
+echo "        Por qué:  El App Role es el permiso explícito que debe tener la"
+echo "                  Managed Identity del frontend para llamar al backend."
+echo "                  Sin este rol asignado, Entra ID no incluye el claim"
+echo "                  'roles' en el token y el backend rechaza la llamada"
+echo "                  con 403 (Capa 2 de seguridad)."
+echo ""
 APP_OBJECT_ID=$(az ad app show --id "$BACKEND_CLIENT_ID" --query id -o tsv)
 APP_ROLES='[
   {
@@ -92,14 +162,29 @@ APP_ROLES='[
 ]'
 az ad app update --id "$APP_OBJECT_ID" --app-roles "$APP_ROLES" -o none
 
-printf "\n[12/13] Asignar el App Role a la Managed Identity del frontend\n"
+echo ""
+echo "[12/13] Asignar App Role a la Managed Identity del frontend"
+echo "        Qué hace: Asigna el App Role 'Frontend.Call' a la Managed Identity del frontend"
+echo "        Por qué:  Conecta la identidad del frontend con el permiso definido"
+echo "                  en el paso anterior. A partir de aquí Entra ID incluirá"
+echo "                  el rol en el token JWT y el backend lo aceptará."
+echo "                  Esto completa las 3 capas de seguridad:"
+echo "                  Capa 1: JWT válido de Entra ID (firma, issuer, audience)"
+echo "                  Capa 2: App Role Frontend.Call presente"
+echo "                  Capa 3: appid == Managed Identity del frontend"
+echo ""
 az rest \
   --method POST \
   --url "https://graph.microsoft.com/v1.0/servicePrincipals/$BACKEND_SP_ID/appRoleAssignedTo" \
   --headers "Content-Type=application/json" \
   --body "{\"principalId\":\"$FRONTEND_PRINCIPAL_ID\",\"resourceId\":\"$BACKEND_SP_ID\",\"appRoleId\":\"$ROLE_ID\"}" -o none
 
-printf "\n[13/13] Imprimir resumen\n"
+echo ""
+echo "[13/13] Imprimir resumen del despliegue"
+echo "        Qué hace: Imprime el resumen con URLs y comandos de verificación"
+echo "        Por qué:  Confirma que todo se creó correctamente y da los pasos"
+echo "                  exactos para probar la comunicación segura."
+echo ""
 
 cat <<EOF
 ╔══════════════════════════════════════════════════════════════════╗
