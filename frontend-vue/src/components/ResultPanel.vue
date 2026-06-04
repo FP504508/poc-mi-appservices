@@ -52,26 +52,23 @@ defineEmits(['reset'])
           <span :style="S.layerFail">❌</span>
           <div>
             <span :style="{ ...S.layerTitle, color: '#c0392b' }">Capa 3 — appid autorizado</span>
-            <span :style="S.layerDesc">El appid no coincide con el del frontend React esperado</span>
+            <span :style="S.layerDesc">appid rechazado por el backend</span>
           </div>
         </div>
       </div>
 
-      <!-- Comparación de identidades -->
-      <div :style="S.sectionHeader">Comparación de identidades</div>
+      <!-- appId rechazado -->
+      <div :style="S.sectionHeader">Identidad rechazada</div>
       <div :style="S.identityCard">
-        <div :style="S.idRow">
+        <div :style="{ ...S.idRow, borderBottom: 'none' }">
           <span :style="S.idLabel">❌ Mi appId (Vue)</span>
           <span :style="{ ...S.idValue, ...S.idValueBad }">{{ data.miAppId || '—' }}</span>
-        </div>
-        <div :style="{ ...S.idRow, borderBottom: 'none' }">
-          <span :style="S.idLabel">✅ appId esperado (React)</span>
-          <span :style="{ ...S.idValue, ...S.idValueOk }">{{ data.appIdEsperado || '—' }}</span>
         </div>
       </div>
 
       <div :style="S.successNote">
-        ✅ Esto demuestra que las 3 capas de seguridad funcionan correctamente
+        Este frontend tiene una identidad válida y los permisos correctos,
+        pero el backend solo acepta una identidad específica.
       </div>
     </template>
 
@@ -249,10 +246,6 @@ const S = {
   idValueBad: {
     backgroundColor: '#fee2e2',
     color: '#991b1b',
-  },
-  idValueOk: {
-    backgroundColor: '#dcfce7',
-    color: '#166534',
   },
   // --- warn ---
   warnBanner: {

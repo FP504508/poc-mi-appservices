@@ -26,9 +26,8 @@ app.get('/health', (_req, res) => {
 })
 
 app.get('/api/call-backend', async (_req, res) => {
-  const backendUrl              = process.env.BACKEND_URL
-  const backendScope            = process.env.BACKEND_SCOPE
-  const reactFrontendMiClientId = process.env.REACT_FRONTEND_MI_CLIENT_ID || '(no configurado)'
+  const backendUrl   = process.env.BACKEND_URL
+  const backendScope = process.env.BACKEND_SCOPE
 
   if (!backendUrl || !backendUrl.trim()) {
     return res.status(500).json({ error: 'BACKEND_URL no está definido en el App Service' })
@@ -59,11 +58,10 @@ app.get('/api/call-backend', async (_req, res) => {
     if (backendResponse.status === 403) {
       return res.status(403).json({
         accesoDenegado: true,
-        motivo: "El backend rechazó la llamada — el appid de esta Managed Identity no coincide con el del frontend React autorizado",
         httpStatus: 403,
         capa: "Capa 3 — appid no autorizado",
-        miAppId,
-        appIdEsperado: reactFrontendMiClientId
+        motivo: "El backend rechazó la llamada. Este frontend tiene el App Role asignado pero su Managed Identity no es la esperada por el backend.",
+        miAppId
       })
     }
 
