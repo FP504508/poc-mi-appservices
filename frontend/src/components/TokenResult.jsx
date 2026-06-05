@@ -1,4 +1,3 @@
-import { useState } from 'react'
 
 const LAYERS = [
   {
@@ -20,9 +19,6 @@ const LAYERS = [
 
 const CLAIMS = [
   ['callerAppId', 'callerAppId'],
-  ['audience',   'audience'],
-  ['issuer',     'issuer'],
-  ['expiraEn',   'expiraEn'],
 ]
 
 const S = {
@@ -190,7 +186,6 @@ function asString(value) {
 }
 
 export default function TokenResult({ data, onReset }) {
-  const [jwtOpen, setJwtOpen] = useState(false)
   const backend = data.backendResponse || {}
 
   return (
@@ -231,21 +226,6 @@ export default function TokenResult({ data, onReset }) {
             ))}
           </tbody>
         </table>
-      </div>
-
-      {/* Collapsible JWT preview */}
-      <div style={S.jwtCard}>
-        <button
-          type="button"
-          style={S.jwtToggle}
-          onClick={() => setJwtOpen(o => !o)}
-        >
-          <span>🔑 Ver token JWT</span>
-          <span>{jwtOpen ? '▲' : '▼'}</span>
-        </button>
-        {jwtOpen && (
-          <div style={S.jwtBody}>{asString(data.tokenPreview)}...</div>
-        )}
       </div>
 
       {/* Reset */}
