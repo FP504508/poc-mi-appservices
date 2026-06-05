@@ -124,11 +124,11 @@ Ejemplo de respuesta JSON exitosa:
 | Recurso | Nombre | Costo aprox. |
 |---|---|---|
 | Resource Group | rg-poc-mi-appservices | $0 |
-| Container Registry | acrpocmi{RANDOM} | ~$5/mes |
+| Container Registry | acrpocmi | ~$5/mes |
 | App Service Plan B1 | plan-poc-mi-appservices | ~$13/mes |
-| App Service Frontend | frontend-poc-{RANDOM} | incluido en plan |
-| App Service Backend | backend-poc-{RANDOM} | incluido en plan |
-| App Registration | backend-poc-api-{RANDOM} | $0 (Entra ID Free) |
+| App Service Frontend | frontend-poc | incluido en plan |
+| App Service Backend | backend-poc | incluido en plan |
+| App Registration | backend-poc-api | $0 (Entra ID Free) |
 | Managed Identity | system-assigned al frontend | $0 |
 
 ## 10. Cómo limpiar
