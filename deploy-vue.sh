@@ -33,7 +33,7 @@ ACR_PASS=$(az acr credential show --name "$ACR_NAME" \
 VUE_IMAGE="$ACR_LOGIN_SERVER/poc-mi-frontend-vue:latest"
 
 BACKEND_CLIENT_ID=$(az ad app list \
-  --display-name-starts-with "backend-poc-api" \
+  --filter "startswith(displayName,'backend-poc-api')" \
   --query "[0].appId" -o tsv)
 APP_ID_URI="api://$BACKEND_CLIENT_ID"
 BACKEND_SCOPE="$APP_ID_URI/.default"
